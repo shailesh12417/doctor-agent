@@ -606,6 +606,30 @@
     analyze();
   });
 
+  // Loader messages cycling (handles slow cold starts on Render free tier)
+  const loaderMessages = [
+    'Analyzing your symptoms…',
+    'Consulting medical knowledge base…',
+    'Almost there, this may take a moment…',
+    'Render free tier may be waking up — please wait…'
+  ];
+  let loaderInterval = null;
+
+  function startLoaderMessages() {
+    let i = 0;
+    const el = document.querySelector('.loader-text');
+    el.textContent = loaderMessages[0];
+    loaderInterval = setInterval(() => {
+      i = Math.min(i + 1, loaderMessages.length - 1);
+      el.textContent = loaderMessages[i];
+    }, 8000);
+  }
+
+  function stopLoaderMessages() {
+    clearInterval(loaderInterval);
+    loaderInterval = null;
+  }
+
   async function analyze() {
     const symptoms = textarea.value.trim();
     if (!symptoms) {
@@ -617,21 +641,37 @@
     hideAll();
     loader.classList.add('active');
     analyzeBtn.disabled = true;
+    startLoaderMessages();
+
+    // 90s timeout — handles Render free tier cold start (~30s) + Groq API call
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000);
 
     try {
       const res = await fetch('/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symptoms })
-        });
+        body: JSON.stringify({ symptoms }),
+        signal: controller.signal
+      });
 
-      const data = await res.json();  // parse first, then check for errors
-      if (!res.ok) {
-        showError(data.detail || `Server error: ${res.status}`);
-        return;
+      clearTimeout(timeout);
+
+      // Try to parse JSON regardless of status code
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`Server returned status ${res.status} with non-JSON response.`);
       }
 
       loader.classList.remove('active');
+      stopLoaderMessages();
+
+      if (!res.ok) {
+        showError(data.detail || data.error || `Server error: ${res.status}`);
+        return;
+      }
 
       if (data.error) {
         showError(data.error);
@@ -639,9 +679,20 @@
       }
 
       renderResults(data);
+
     } catch (err) {
+      clearTimeout(timeout);
       loader.classList.remove('active');
-      showError('Could not connect to the server. Please try again.');
+      stopLoaderMessages();
+
+      if (err.name === 'AbortError') {
+        showError('Request timed out. The server may be waking up — please try again in a few seconds.');
+      } else if (!navigator.onLine) {
+        showError('You appear to be offline. Please check your internet connection.');
+      } else {
+        showError(`Connection failed: ${err.message}. Check browser console (F12) for details.`);
+      }
+      console.error('[MediScan] Fetch error:', err);
     } finally {
       analyzeBtn.disabled = false;
     }
