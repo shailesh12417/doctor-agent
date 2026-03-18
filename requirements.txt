@@ -16,3 +16,4 @@ marshmallow
 multidict
 mypy_extensions
 jinja2
+python-multipart
