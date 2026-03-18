@@ -23,7 +23,21 @@ llm = ChatGroq(
     temperature=0   # you can also use mixtral-8x7b
 )
 
-# Prompt Template
+
+
+chain = prompt | llm
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/ask")
+async def ask_question(data: SymptomRequest):
+
+
+    # Prompt Template
 prompt = PromptTemplate(
     input_variables=["symptoms"],
     template=f"""
@@ -63,17 +77,6 @@ Output format:
 }}
 """
 )
-
-chain = prompt | llm
-
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
-@app.post("/ask")
-async def ask_question(data: SymptomRequest):
 
     response = chain.invoke({"symptoms": data.symptoms})
 
