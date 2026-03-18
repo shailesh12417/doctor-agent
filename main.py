@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
@@ -11,12 +12,20 @@ from langchain_core.prompts import PromptTemplate
 load_dotenv()
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 templates = Jinja2Templates(directory="templates")
 
 class SymptomRequest(BaseModel):
     symptoms: str
 
-# ✅ Fix 3: Use a valid Groq model name
+
 llm = ChatGroq(
     groq_api_key=os.getenv("GROQ_API_KEY"),
     model="llama3-70b-8192",
@@ -29,8 +38,7 @@ async def home(request: Request):
 
 @app.post("/ask")
 async def ask_question(data: SymptomRequest):
-    # ✅ Fix 1 & 2: Use plain string (no f-string), reference {symptoms} via template variable
-    # ✅ JSON braces escaped as {{ }} so LangChain doesn't treat them as variables
+
     prompt = PromptTemplate(
         input_variables=["symptoms"],
         template="""
@@ -73,7 +81,7 @@ Output format (JSON only, no extra text):
     chain = prompt | llm
     response = chain.invoke({"symptoms": data.symptoms})
 
-    # ✅ Strip markdown code fences if model wraps JSON in ```json ... ```
+
     raw = response.content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
