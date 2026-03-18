@@ -11,3 +11,8 @@ langchain-groq
 
 httpx
 requests
+MarkupSafe
+marshmallow
+multidict
+mypy_extensions
+jinja2
