@@ -38,7 +38,7 @@ async def ask_question(data: SymptomRequest):
 
 
     # Prompt Template
-prompt = PromptTemplate(
+    prompt = PromptTemplate(
     input_variables=["symptoms"],
     template=f"""
 You are a medical assistant.
