@@ -648,8 +648,7 @@
     const timeout = setTimeout(() => controller.abort(), 90000);
 
     try {
-      const BASE_URL = window.location.origin;
-      const res = await fetch(`${BASE_URL}/ask`, {
+      const res = await fetch('https://doctor-agent-2.onrender.com/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symptoms }),
