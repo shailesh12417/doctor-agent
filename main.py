@@ -24,10 +24,6 @@ llm = ChatGroq(
 )
 
 
-
-chain = prompt | llm
-
-
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -77,6 +73,7 @@ Output format:
 }}
 """
 )
+    chain = prompt | llm
 
     response = chain.invoke({"symptoms": data.symptoms})
 
