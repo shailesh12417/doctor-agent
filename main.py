@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-
+from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
-
+import json
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 
@@ -13,6 +13,8 @@ load_dotenv()
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+class SymptomRequest(BaseModel):
+    symptoms: str
 
 # Initialize Groq model
 llm = ChatGroq(
@@ -24,38 +26,41 @@ llm = ChatGroq(
 # Prompt Template
 prompt = PromptTemplate(
     input_variables=["symptoms"],
-    template="""
-You are a professional medical assistant.
+    template=f"""
+You are a medical assistant.
+
+Analyze the symptoms and respond ONLY in structured JSON format.
 
 Rules:
-- Only answer health-related questions
-- If not health-related, reply:
-  "Sorry, I only answer health-related questions."
-- Do NOT give exact diagnosis
-- Keep answers simple and clear
+- Only answer health-related queries
+- If not health-related → return:
+  {{"error": "Sorry, I only answer health-related questions."}}
 
-Patient Symptoms:
-{symptoms}
+For valid symptoms:
+- Identify 2–3 possible conditions
+- For each condition give:
+  - name
+  - likelihood percentage (rough estimate)
+  - risk level (Low / Medium / High)
+  - short explanation
+- Give general advice
+- Add warning if serious
 
-Provide response in this structured format:
+Symptoms: {data.symptoms}
 
-1. Possible Causes:
-- List 2–4 possible reasons
-
-2. Severity Level:
-- Mild / Moderate / Serious (choose one)
-- Give a short reason
-
-3. General Advice:
-- Give 3–5 practical suggestions
-
-4. When to See a Doctor:
-- Clearly mention warning signs
-
-5. Disclaimer:
-- This is not a medical diagnosis
-
-Answer:
+Output format:
+{{
+  "conditions": [
+    {{
+      "name": "Condition name",
+      "probability": "70%",
+      "risk": "Medium",
+      "description": "Short reason"
+    }}
+  ],
+  "advice": "General advice",
+  "warning": "Only if serious"
+}}
 """
 )
 
@@ -67,16 +72,17 @@ async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.post("/ask", response_class=HTMLResponse)
-async def ask_question(request: Request, symptoms: str = Form(...)):
-    response = chain.invoke({"symptoms": symptoms})
-    answer = response.content
+@app.post("/ask")
+async def ask_question(data: SymptomRequest):
 
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "answer": answer,
-            "symptoms": symptoms
+    response = chain.invoke({"symptoms": data.symptoms})
+
+    try:
+        result = json.loads(response.content)
+    except:
+        result = {
+            "error": "Model response parsing failed",
+            "raw": response.content
         }
-    )
+
+    return result
