@@ -111,7 +111,7 @@ async function getDiagnosis() {
   resultDiv.innerHTML = "";
   loader.style.display = "block";
 
-  const response = await fetch("https://YOUR-RENDER-URL/ask", {
+  const response = await fetch("https://doctor-agent-2.onrender.com/ask", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
