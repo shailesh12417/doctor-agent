@@ -623,10 +623,13 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symptoms })
-      });
+        });
 
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const data = await res.json();
+      const data = await res.json();  // parse first, then check for errors
+      if (!res.ok) {
+        showError(data.detail || `Server error: ${res.status}`);
+        return;
+      }
 
       loader.classList.remove('active');
 
