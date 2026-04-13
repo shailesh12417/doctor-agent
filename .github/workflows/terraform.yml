@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code (optional)
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Deploy to EC2 via SSH
@@ -29,51 +29,44 @@ jobs:
             # Update system
             sudo apt-get update -y
 
-            # Install Docker & Git if not installed
-            if ! command -v docker &> /dev/null
+            # Install Node.js (IMPORTANT for Next.js)
+            if ! command -v node &> /dev/null
             then
-              echo "Installing Docker..."
-              sudo apt-get install -y docker.io
-              sudo systemctl start docker
-              sudo systemctl enable docker
+              echo "Installing Node..."
+              curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+              sudo apt-get install -y nodejs
             fi
 
+            # Install PM2 (process manager)
+            sudo npm install -g pm2
+
+            # Install Git if not present
             if ! command -v git &> /dev/null
             then
-              echo "Installing Git..."
               sudo apt-get install -y git
             fi
 
-            # Go to home directory
             cd /home/ubuntu
 
-            # Clone repo if not exists
-            if [ ! -d "doctor_agent" ]; then
-              echo "Cloning repository..."
-              git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git doctor_agent
+            # Clone repo first time
+            if [ ! -d "doctor-agent" ]; then
+              git clone https://github.com/shailesh12417/doctor-agent.git
             fi
 
-            cd doctor_agent
+            cd doctor-agent
 
             # Pull latest code
-            echo "Pulling latest code..."
             git fetch origin
             git reset --hard origin/main
 
-            # Stop and remove old container if exists
-            echo "Stopping old container..."
-            sudo docker stop doctor-app || true
-            sudo docker rm doctor-app || true
+            # Install dependencies
+            npm install
 
-            # Remove old image (optional cleanup)
-            sudo docker rmi doctor-app || true
+            # Build project
+            npm run build
 
-            # Build Docker image
-            echo "Building Docker image..."
-            sudo docker build -t doctor-app .
+            # Restart app using PM2
+            pm2 delete doctor-app || true
+            pm2 start npm --name "doctor-app" -- start
 
-            # Run container
-            echo "Starting container..."
-            sudo docker run -d -p 80:80 --name doctor-app doctor-app
-
-            echo "✅ Deployment completed successfully!"
+            echo "✅ Deployment completed!"
