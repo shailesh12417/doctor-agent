@@ -1,4 +1,4 @@
-name: Deploy to EC2
+name: Terraform + Deploy FastAPI
 
 on:
   push:
@@ -7,40 +7,61 @@ on:
 
 jobs:
   deploy:
-    name: Deploy App to EC2
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repo
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to EC2 via SSH
+      # 2. Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # 3. Configure AWS credentials
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      # 4. Terraform Init
+      - name: Terraform Init
+        run: terraform init
+
+      # 5. Terraform Apply
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      # 6. Get EC2 Public IP
+      - name: Get EC2 IP
+        id: tf_output
+        run: |
+          echo "EC2_IP=$(terraform output -raw instance_public_ip)" >> $GITHUB_ENV
+
+      # 7. Deploy FastAPI via SSH
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
+          host: ${{ env.EC2_IP }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
             set -e
 
-            echo "🚀 Starting deployment..."
+            echo "🚀 Deploying FastAPI..."
 
-            # Update system
             sudo apt-get update -y
 
-            # Install Node.js (IMPORTANT for Next.js)
-            if ! command -v node &> /dev/null
+            # Install Python
+            if ! command -v python3 &> /dev/null
             then
-              echo "Installing Node..."
-              curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-              sudo apt-get install -y nodejs
+              sudo apt-get install -y python3 python3-pip python3-venv
             fi
 
-            # Install PM2 (process manager)
-            sudo npm install -g pm2
-
-            # Install Git if not present
+            # Install Git
             if ! command -v git &> /dev/null
             then
               sudo apt-get install -y git
@@ -48,7 +69,7 @@ jobs:
 
             cd /home/ubuntu
 
-            # Clone repo first time
+            # Clone repo if needed
             if [ ! -d "doctor-agent" ]; then
               git clone https://github.com/shailesh12417/doctor-agent.git
             fi
@@ -59,14 +80,17 @@ jobs:
             git fetch origin
             git reset --hard origin/main
 
-            # Install dependencies
-            npm install
+            # Setup venv
+            python3 -m venv venv
+            source venv/bin/activate
 
-            # Build project
-            npm run build
+            pip install --upgrade pip
+            pip install -r requirements.txt
 
-            # Restart app using PM2
-            pm2 delete doctor-app || true
-            pm2 start npm --name "doctor-app" -- start
+            # Stop old app
+            pkill -f uvicorn || true
 
-            echo "✅ Deployment completed!"
+            # Start app
+            nohup uvicorn main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
+
+            echo "✅ Deployment done"
