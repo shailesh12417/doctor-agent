@@ -8,6 +8,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # If you are using Repository Secrets, you can remove the next line.
+    # If you use Environment Secrets, keep it.
+    environment: production 
 
     steps:
       - name: Checkout code
@@ -25,23 +28,22 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: ./terraform/terraform # Added directory
+        working-directory: ./terraform/terraform
 
       - name: Terraform Apply
         run: terraform apply -auto-approve
-        working-directory: ./terraform/terraform # Added directory
+        working-directory: ./terraform/terraform
 
       - name: Get EC2 IP
         id: tf_output
         run: |
-          # Use the -chdir flag so terraform knows where the files are
           echo "EC2_IP=$(terraform -chdir=./terraform/terraform output -raw instance_public_ip)" >> $GITHUB_ENV
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_IP }}
-          username: ubuntu # Hardcoded as it's standard for Ubuntu AMIs
+          host: ${{ secrets.EC2_IP }} # Dynamic IP from Terraform
+          username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
@@ -52,7 +54,6 @@ jobs:
 
             cd /home/ubuntu
 
-            # Clone or Refresh repo
             if [ ! -d "doctor-agent" ]; then
               git clone https://github.com/shailesh12417/doctor-agent.git
             fi
@@ -61,17 +62,18 @@ jobs:
             git fetch origin
             git reset --hard origin/main
 
-            # Setup venv and Install
+            # Setup Environment
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r requirements.txt
 
-            # Stop old app (using 8000 as specified in your uvicorn command)
+            # Kill old process
             sudo fuser -k 8000/tcp || true
 
-            # Start app in background
-            # Note: Ensure your file is actually named main.py
+            # Start app with Groq Key injected
+            # We use 'export' so the Python process can see the environment variable
+            export GROQ_API_KEY="${{ secrets.GROQ_API_KEY }}"
             nohup venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
 
-            echo "✅ Deployment done"
+            echo "✅ Deployment done at http://${{ env.EC2_IP }}:8000"
