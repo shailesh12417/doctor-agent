@@ -10,15 +10,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repo
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 3. Configure AWS credentials
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -26,71 +23,55 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-north-1
 
-      # 4. Terraform Init
       - name: Terraform Init
         run: terraform init
+        working-directory: ./terraform/terraform # Added directory
 
-      # 5. Terraform Apply
       - name: Terraform Apply
         run: terraform apply -auto-approve
+        working-directory: ./terraform/terraform # Added directory
 
-      # 6. Get EC2 Public IP
       - name: Get EC2 IP
         id: tf_output
         run: |
-          echo "EC2_IP=$(terraform output -raw instance_public_ip)" >> $GITHUB_ENV
+          # Use the -chdir flag so terraform knows where the files are
+          echo "EC2_IP=$(terraform -chdir=./terraform/terraform output -raw instance_public_ip)" >> $GITHUB_ENV
 
-      # 7. Deploy FastAPI via SSH
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_IP }}
-          username: ${{ secrets.EC2_USER }}
+          username: ubuntu # Hardcoded as it's standard for Ubuntu AMIs
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
           script: |
             set -e
-
             echo "🚀 Deploying FastAPI..."
 
             sudo apt-get update -y
-
-            # Install Python
-            if ! command -v python3 &> /dev/null
-            then
-              sudo apt-get install -y python3 python3-pip python3-venv
-            fi
-
-            # Install Git
-            if ! command -v git &> /dev/null
-            then
-              sudo apt-get install -y git
-            fi
+            sudo apt-get install -y python3 python3-pip python3-venv git
 
             cd /home/ubuntu
 
-            # Clone repo if needed
+            # Clone or Refresh repo
             if [ ! -d "doctor-agent" ]; then
               git clone https://github.com/shailesh12417/doctor-agent.git
             fi
 
             cd doctor-agent
-
-            # Pull latest code
             git fetch origin
             git reset --hard origin/main
 
-            # Setup venv
+            # Setup venv and Install
             python3 -m venv venv
             source venv/bin/activate
-
             pip install --upgrade pip
             pip install -r requirements.txt
 
-            # Stop old app
-            pkill -f uvicorn || true
+            # Stop old app (using 8000 as specified in your uvicorn command)
+            sudo fuser -k 8000/tcp || true
 
-            # Start app
-            nohup uvicorn main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
+            # Start app in background
+            # Note: Ensure your file is actually named main.py
+            nohup venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
 
             echo "✅ Deployment done"
